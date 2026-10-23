@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telegram-anti-spam-hook"
+version = "0.1.0"
+description = "A narrowly scoped Telegram conversation client backed by local Ollama"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0,<2",
+    "Telethon>=1.40,<2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.24,<2",
+]
+
+[project.scripts]
+anti-spam-bot = "anti_spam_bot.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
