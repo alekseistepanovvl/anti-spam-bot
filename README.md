@@ -24,6 +24,9 @@ For live messages, Ollama generates the reply and updated important memory in a
 single structured request. The new summary is committed only after Telegram
 successfully sends the reply. Startup or unusually large unsummarized backlogs
 still use separate recursive summary batches before normal combined generation.
+Persisted memory is supplied at the final generation decision point as mandatory
+continuity context: replies should use relevant known facts and must not repeat
+questions already answered or recorded as asked.
 
 ## Setup
 
