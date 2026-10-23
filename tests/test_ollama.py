@@ -140,3 +140,34 @@ async def test_combined_turn_uses_structured_output() -> None:
     assert turn.reply == "Что именно вы предлагаете?"
     assert turn.summary == "Компания пока не названа."
     assert captured_schema["type"] == "object"
+
+
+@pytest.mark.asyncio
+async def test_proactive_turn_uses_summary_and_structured_output() -> None:
+    client = OllamaClient("http://127.0.0.1:11434", "model")
+    captured_messages: list[dict[str, str]] = []
+
+    def capture(
+        messages: list[dict[str, str]],
+        _: float,
+        schema: dict[str, object] | None = None,
+    ) -> str:
+        assert schema is not None
+        captured_messages.extend(messages)
+        return json.dumps(
+            {
+                "reply": "Откуда у вас мой контакт?",
+                "summary": "Задан вопрос об источнике контакта.",
+            }
+        )
+
+    client._request_sync = capture  # type: ignore[method-assign]
+    turn = await client.generate_proactive_and_summary(
+        [ChatMessage(role="user", content="Есть предложение.")],
+        summary="Компания не названа.",
+        max_summary_chars=2000,
+    )
+
+    assert turn.reply == "Откуда у вас мой контакт?"
+    assert turn.summary == "Задан вопрос об источнике контакта."
+    assert any("Компания не названа." in item["content"] for item in captured_messages)

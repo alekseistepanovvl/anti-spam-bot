@@ -69,6 +69,19 @@ Make sure Ollama is running, then start:
 anti-spam-bot
 ```
 
+While the service is running, type the following into the same terminal and
+press Enter:
+
+```text
+/send
+```
+
+The command loads the complete persisted important summary plus the latest 10
+messages, generates one proactive Russian message and an updated summary in a
+single Ollama request, waits for the configured human-like delay, and posts the
+message to the configured Telegram chat. It is serialized with automatic
+replies. New Telegram activity cancels a stale command-generated message.
+
 Incoming text and sent replies are shown in the terminal and written to
 `logs\anti-spam.log`, with three rotated backups. These logs contain message
 content and should be protected accordingly. Persistent message history and its

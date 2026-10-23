@@ -201,6 +201,50 @@ async def test_combined_turn_saves_summary_after_successful_send(
 
 
 @pytest.mark.asyncio
+async def test_terminal_send_generates_and_posts_from_summary(tmp_path) -> None:
+    client = _FakeClient()
+    service = ConversationService(_config(tmp_path / "memory.db"), client)  # type: ignore[arg-type]
+    _seed_memory(service)
+
+    class _ProactiveOllama:
+        async def generate_proactive_and_summary(
+            self,
+            _: list[ChatMessage],
+            *,
+            summary: str,
+            max_summary_chars: int,
+        ) -> GeneratedTurn:
+            assert summary == "Получено первое сообщение."
+            return GeneratedTurn(
+                reply="Можете уточнить название вашей организации?",
+                summary=(
+                    "Получено первое сообщение; задан вопрос о названии организации."
+                ),
+            )
+
+    service._ollama = _ProactiveOllama()  # type: ignore[assignment]
+    await service._handle_terminal_command("/send")
+    stored_summary = service._memory.get_summary(123)
+    service._memory.close()
+
+    assert client.sent == ["Можете уточнить название вашей организации?"]
+    assert stored_summary.through_message_id == 2
+    assert "названии организации" in stored_summary.content
+
+
+@pytest.mark.asyncio
+async def test_unknown_terminal_command_does_not_send(tmp_path) -> None:
+    client = _FakeClient()
+    service = ConversationService(_config(tmp_path / "memory.db"), client)  # type: ignore[arg-type]
+    _seed_memory(service)
+
+    await service._handle_terminal_command("/unknown")
+    service._memory.close()
+
+    assert client.sent == []
+
+
+@pytest.mark.asyncio
 async def test_startup_uses_incremental_sync_and_keeps_summary(tmp_path) -> None:
     client = _IncrementalClient()
     service = ConversationService(
