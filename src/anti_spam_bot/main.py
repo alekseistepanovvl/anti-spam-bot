@@ -37,6 +37,11 @@ async def _list_dialogs(config: Config) -> None:
     try:
         async for dialog in client.iter_dialogs():
             if dialog.is_user:
+                logger.info(
+                    "TELEGRAM READ dialog chat_id=%s name=%s",
+                    dialog.id,
+                    dialog.name,
+                )
                 print(f"{dialog.id}\t{dialog.name}")
     finally:
         await client.disconnect()

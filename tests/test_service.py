@@ -162,10 +162,14 @@ async def test_validation_error_is_never_sent_to_chat(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_combined_turn_saves_summary_after_successful_send(tmp_path) -> None:
+async def test_combined_turn_saves_summary_after_successful_send(
+    tmp_path,
+    caplog,
+) -> None:
     client = _FakeClient()
     service = ConversationService(_config(tmp_path / "memory.db"), client)  # type: ignore[arg-type]
     _seed_memory(service)
+    caplog.set_level("INFO", logger="anti_spam_bot.service")
 
     class _CombinedOllama:
         async def generate_reply_and_summary(
@@ -191,6 +195,9 @@ async def test_combined_turn_saves_summary_after_successful_send(tmp_path) -> No
         "Получено предложение; задан вопрос о его сути."
     )
     assert stored_summary.through_message_id == 2
+    assert "TELEGRAM WRITE requested" in caplog.text
+    assert "TELEGRAM WRITE completed" in caplog.text
+    assert "Что именно вы предлагаете?" in caplog.text
 
 
 @pytest.mark.asyncio

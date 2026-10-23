@@ -4,9 +4,14 @@ import asyncio
 import http.client
 import ipaddress
 import json
+import logging
 import socket
+import uuid
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+
+logger = logging.getLogger(__name__)
 
 
 BASE_SYSTEM_PROMPT = """\
@@ -209,7 +214,23 @@ class OllamaClient:
         }
         if format_schema is not None:
             payload["format"] = format_schema
-        body = self._post_local_json(json.dumps(payload).encode("utf-8"))
+        request_id = uuid.uuid4().hex[:12]
+        payload_text = json.dumps(payload, ensure_ascii=False)
+        logger.info(
+            "LLM REQUEST id=%s model=%s endpoint=http://%s:%s%s | %s",
+            request_id,
+            self._model,
+            self._host,
+            self._port,
+            self._path,
+            payload_text,
+        )
+        body = self._post_local_json(payload_text.encode("utf-8"), request_id)
+        logger.info(
+            "LLM RESPONSE id=%s | %s",
+            request_id,
+            body.decode("utf-8", errors="replace"),
+        )
 
         try:
             data = json.loads(body)
@@ -220,10 +241,16 @@ class OllamaClient:
             raise OllamaError("Ollama response content is not text")
         return content.strip()
 
-    def _post_local_json(self, body: bytes) -> bytes:
+    def _post_local_json(self, body: bytes, request_id: str = "direct") -> bytes:
         addresses = _resolve_loopback_addresses(self._host, self._port)
         last_error: Exception | None = None
         for address in addresses:
+            logger.info(
+                "LLM CONNECT id=%s address=%s port=%s",
+                request_id,
+                address,
+                self._port,
+            )
             connection = http.client.HTTPConnection(
                 address,
                 self._port,
@@ -247,17 +274,41 @@ class OllamaClient:
 
                 response = connection.getresponse()
                 response_body = response.read(1024 * 1024 + 1)
+                logger.info(
+                    "LLM HTTP id=%s peer=%s status=%s reason=%s",
+                    request_id,
+                    peer_address,
+                    response.status,
+                    response.reason,
+                )
                 if len(response_body) > 1024 * 1024:
+                    logger.info(
+                        "LLM RESPONSE id=%s | %s",
+                        request_id,
+                        response_body.decode("utf-8", errors="replace"),
+                    )
                     raise OllamaError("Ollama response exceeds 1 MiB")
                 if response.status != 200:
                     details = response_body.decode("utf-8", errors="replace")[:500]
+                    logger.info(
+                        "LLM RESPONSE id=%s | %s",
+                        request_id,
+                        response_body.decode("utf-8", errors="replace"),
+                    )
                     raise OllamaError(
                         f"Ollama returned HTTP {response.status}: {details}"
                     )
                 return response_body
             except OllamaError:
+                logger.exception("LLM FAILURE id=%s", request_id)
                 raise
             except (http.client.HTTPException, OSError, TimeoutError) as exc:
+                logger.warning(
+                    "LLM CONNECTION FAILURE id=%s address=%s error=%r",
+                    request_id,
+                    address,
+                    exc,
+                )
                 last_error = exc
             finally:
                 connection.close()

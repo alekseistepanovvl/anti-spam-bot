@@ -74,6 +74,14 @@ Incoming text and sent replies are shown in the terminal and written to
 content and should be protected accordingly. Persistent message history and its
 summary are stored in `data\conversation.db`. Press `Ctrl+C` to stop manually.
 
+The log is a complete operational audit trail: Telegram connection and target
+resolution, every synchronized or live message read, edits and deletions, every
+send attempt/result, full Ollama JSON request payloads, resolved local
+connections, HTTP status, raw Ollama responses, generated summaries, and
+failures. Telegram credentials are not logged. Because prompts, replies, and
+incoming message content are recorded verbatim, protect and rotate the log as
+sensitive data.
+
 `BOOTSTRAP_HISTORY_LIMIT=0` reads the complete existing chat during the initial
 bootstrap. Set a positive value to cap that first import for a very large chat.
 Normal restarts use Telegram's `min_id` synchronization and keep the existing

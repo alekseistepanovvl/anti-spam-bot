@@ -19,6 +19,7 @@ class _FakeSocket:
 
 class _RedirectResponse:
     status = 302
+    reason = "Found"
 
     def read(self, _: int) -> bytes:
         return b"https://example.com"
@@ -52,6 +53,27 @@ def test_rejects_redirect_without_following_it() -> None:
         pytest.raises(OllamaError, match="HTTP 302"),
     ):
         client._post_local_json(b"{}")
+
+
+def test_logs_full_llm_request_and_response(caplog) -> None:
+    client = OllamaClient("http://127.0.0.1:11434", "model")
+    caplog.set_level("INFO", logger="anti_spam_bot.ollama")
+
+    with patch.object(
+        client,
+        "_post_local_json",
+        return_value='{"message":{"content":"Ответ модели"}}'.encode("utf-8"),
+    ):
+        result = client._request_sync(
+            [{"role": "user", "content": "Полный текст запроса"}],
+            0.2,
+        )
+
+    assert result == "Ответ модели"
+    assert "LLM REQUEST" in caplog.text
+    assert "Полный текст запроса" in caplog.text
+    assert "LLM RESPONSE" in caplog.text
+    assert "Ответ модели" in caplog.text
 
 
 def test_rejects_host_resolving_outside_loopback() -> None:

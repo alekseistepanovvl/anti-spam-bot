@@ -50,10 +50,21 @@ class ConversationService:
 
     async def run(self) -> None:
         try:
+            logger.info("TELEGRAM CONNECT starting")
             await self._client.start(phone=self._config.telegram_phone)
+            logger.info("TELEGRAM CONNECT completed")
+            logger.info(
+                "TELEGRAM READ resolving target chat_id=%s",
+                self._config.telegram_chat_id,
+            )
             target = await self._client.get_entity(self._config.telegram_chat_id)
             if getattr(target, "bot", False):
                 raise FatalServiceError("The configured target is a bot, not a person")
+            logger.info(
+                "TELEGRAM READ resolved target chat_id=%s name=%s",
+                self._config.telegram_chat_id,
+                _display_name(target),
+            )
 
             self._client.add_event_handler(
                 self._on_incoming_message,
@@ -95,12 +106,18 @@ class ConversationService:
             if self._worker_task is not None:
                 self._worker_task.cancel()
                 await asyncio.gather(self._worker_task, return_exceptions=True)
+            logger.info("TELEGRAM CONNECT stopped")
             self._memory.close()
 
     async def _on_incoming_message(self, event: events.NewMessage.Event) -> None:
         message = event.message
         text = message.raw_text.strip()
-        logger.info("IN  message_id=%s | %s", message.id, text or "<non-text message>")
+        logger.info(
+            "TELEGRAM READ live incoming message_id=%s date=%s | %s",
+            message.id,
+            message.date.isoformat(),
+            text or "<non-text message>",
+        )
         if not text:
             await self._stop("Received a non-text message; stopping")
             return
@@ -112,8 +129,9 @@ class ConversationService:
         message = event.message
         text = message.raw_text.strip()
         logger.info(
-            "OUT observed message_id=%s | %s",
+            "TELEGRAM READ live outgoing message_id=%s date=%s | %s",
             message.id,
+            message.date.isoformat(),
             text or "<non-text message>",
         )
         if text != self._expected_generated_reply:
@@ -125,9 +143,10 @@ class ConversationService:
         message = event.message
         text = message.raw_text.strip()
         logger.info(
-            "EDIT %s message_id=%s | %s",
+            "TELEGRAM READ edit direction=%s message_id=%s date=%s | %s",
             "OUT" if message.out else "IN",
             message.id,
+            message.date.isoformat(),
             text or "<non-text message>",
         )
         self._mark_conversation_changed([message.id])
@@ -150,7 +169,11 @@ class ConversationService:
             self._config.telegram_chat_id,
             message_ids,
         )
-        logger.info("DELETE message_ids=%s; removed=%s", message_ids, deleted)
+        logger.info(
+            "TELEGRAM READ delete message_ids=%s removed_from_memory=%s",
+            message_ids,
+            deleted,
+        )
 
     async def _reply_worker(self) -> None:
         try:
@@ -244,11 +267,23 @@ class ConversationService:
             )
             return
         self._expected_generated_reply = reply
+        logger.info(
+            "TELEGRAM WRITE requested chat_id=%s | %s",
+            self._config.telegram_chat_id,
+            reply,
+        )
         try:
-            sent = await self._client.send_message(
-                self._config.telegram_chat_id,
-                reply,
-            )
+            try:
+                sent = await self._client.send_message(
+                    self._config.telegram_chat_id,
+                    reply,
+                )
+            except Exception:
+                logger.exception(
+                    "TELEGRAM WRITE failed chat_id=%s",
+                    self._config.telegram_chat_id,
+                )
+                raise
         finally:
             self._expected_generated_reply = None
         self._store_message(sent)
@@ -258,7 +293,13 @@ class ConversationService:
             through_message_id=sent.id,
         )
         logger.info("IMPORTANT MEMORY | %s", updated_summary)
-        logger.info("OUT message_id=%s | %s", sent.id, reply)
+        logger.info(
+            "TELEGRAM WRITE completed chat_id=%s message_id=%s date=%s | %s",
+            self._config.telegram_chat_id,
+            sent.id,
+            sent.date.isoformat(),
+            reply,
+        )
 
     async def _sync_history(self) -> SyncResult:
         self._sync_in_progress = True
@@ -278,6 +319,11 @@ class ConversationService:
             self._live_changed_message_ids.clear()
 
     async def _incremental_sync(self, latest_message_id: int) -> SyncResult:
+        logger.info(
+            "TELEGRAM READ sync mode=incremental chat_id=%s min_id=%s",
+            self._config.telegram_chat_id,
+            latest_message_id,
+        )
         imported = 0
         messages = self._client.iter_messages(
             self._config.telegram_chat_id,
@@ -295,6 +341,11 @@ class ConversationService:
         return SyncResult(mode="incremental", imported=imported)
 
     async def _capped_bootstrap(self) -> SyncResult:
+        logger.info(
+            "TELEGRAM READ sync mode=bootstrap-capped chat_id=%s limit=%s",
+            self._config.telegram_chat_id,
+            self._config.bootstrap_history_limit,
+        )
         messages = await self._client.get_messages(
             self._config.telegram_chat_id,
             limit=self._config.bootstrap_history_limit,
@@ -314,6 +365,11 @@ class ConversationService:
 
     async def _full_reconcile(self) -> SyncResult:
         limit = self._config.bootstrap_history_limit or None
+        logger.info(
+            "TELEGRAM READ sync mode=full chat_id=%s limit=%s",
+            self._config.telegram_chat_id,
+            limit,
+        )
         sync_token = uuid.uuid4().hex
         self._sync_token = sync_token
         imported = 0
@@ -415,7 +471,19 @@ class ConversationService:
         *,
         from_bootstrap: bool = False,
     ) -> None:
+        if from_bootstrap:
+            logger.info(
+                "TELEGRAM READ sync message_id=%s direction=%s date=%s | %s",
+                message.id,
+                "OUT" if message.out else "IN",
+                message.date.isoformat(),
+                message.raw_text.strip() or "<non-text message>",
+            )
         if from_bootstrap and message.id in self._live_changed_message_ids:
+            logger.info(
+                "TELEGRAM READ sync skipped stale snapshot message_id=%s",
+                message.id,
+            )
             return
         invalidated = self._memory.upsert_message(
             chat_id=self._config.telegram_chat_id,
